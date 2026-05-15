@@ -7,7 +7,6 @@ The system uses a DDD-inspired layered monolith with hexagonal boundaries.
 That shape is intentional for two reasons:
 
 * the product is still converging on its core contracts
-* both major workflows, parse reporting and Nassi diagram generation, share the same source-loading and parser-related seams
 
 ## Architectural Principles
 
@@ -24,7 +23,6 @@ That shape is intentional for two reasons:
 Contains:
 
 * entities and value objects for parsing
-* immutable control-flow records for diagrams
 * invariants and domain errors
 * ports
 * domain events
@@ -36,13 +34,11 @@ The domain does not know about ANTLR, filesystem paths, HTML, CLI arguments, JSO
 Contains:
 
 * parse-report commands and DTOs
-* diagram-generation commands and DTOs
 * orchestration services
 
 Current application services:
 
 * `ParsingJobService`
-* `NassiDiagramService`
 
 The application layer coordinates work through ports and publishes parse lifecycle events where relevant.
 
@@ -52,7 +48,6 @@ Contains:
 
 * ANTLR grammar integration and parser adapters
 * control-flow extraction built on top of the generated parser
-* HTML Nassi renderer
 * filesystem adapters
 * clock, logging, and repository adapters
 * parser generation scripts
@@ -60,9 +55,7 @@ Contains:
 Important current adapters include:
 
 * `FileSystemSourceRepository`
-* `AntlrSwiftSyntaxParser`
-* `AntlrSwiftControlFlowExtractor`
-* `HtmlNassiDiagramRenderer`
+* `AntlrSQLiteSyntaxParser`
 * `StructuredLoggingEventPublisher`
 * `SystemClock`
 * `InMemoryParsingJobRepository`
@@ -78,7 +71,6 @@ Contains:
 * output path resolution
 * JSON response rendering
 * exit-code policy
-* directory index generation for diagram bundles
 
 Current CLI commands:
 
@@ -94,17 +86,14 @@ Current CLI commands:
 1. The CLI resolves a file or directory path.
 2. `FileSystemSourceRepository` loads one `SourceUnit` or lists many.
 3. `ParsingJobService` creates a `ParsingJob`.
-4. `AntlrSwiftSyntaxParser` parses each source unit into a `ParseOutcome`.
+4. `AntlrSQLiteSyntaxParser` parses each source unit into a `ParseOutcome`.
 5. The service records outcomes, emits lifecycle events, and completes the job.
 6. Application DTO mapping produces `ParsingJobReportDTO`.
 7. Presentation serializes the DTO to JSON and chooses an exit code.
 
-### Nassi Diagram Flow
 
 1. The CLI resolves a file or directory path and any output path override.
 2. `FileSystemSourceRepository` loads source units.
-3. `NassiDiagramService` asks `AntlrSwiftControlFlowExtractor` for a `ControlFlowDiagram`.
-4. `HtmlNassiDiagramRenderer` converts that diagram into HTML.
 5. Presentation writes one HTML file per source or a full bundle plus index page.
 6. Presentation prints JSON metadata about generated artifacts.
 
@@ -113,9 +102,7 @@ Current CLI commands:
 The main ports and their current responsibilities are:
 
 * `SourceRepository`: file loading and directory enumeration
-* `SwiftSyntaxParser`: parse-report production
-* `SwiftControlFlowExtractor`: control-flow model extraction
-* `NassiDiagramRenderer`: HTML rendering
+* `SQLiteSyntaxParser`: parse-report production
 * `DomainEventPublisher`: lifecycle event publication
 * `Clock`: time source abstraction
 * `ParsingJobRepository`: persistence seam for completed jobs
@@ -140,14 +127,10 @@ It does not own:
 * JSON rendering
 * HTML rendering
 
-### Control Flow Model
 
-The diagram workflow currently uses immutable records rather than a mutable aggregate. `ControlFlowDiagram` and `FunctionControlFlow` are request-scoped representations produced by extraction and immediately consumed by a renderer.
 
-That choice keeps the diagram path simple:
 
 * no extra persistence lifecycle
-* no domain-event stream for diagrams yet
 * easy reuse by future renderers such as SVG, PNG, or Mermaid
 
 ## Error Model
@@ -158,14 +141,12 @@ The contract distinguishes:
 * technical failures, such as unreadable files or parser runtime failures
 * syntax diagnostics, which are parser findings and not process crashes
 
-For diagram generation, extraction or rendering failures should surface as explicit failures rather than silently producing incomplete diagrams.
 
 ## State and Persistence
 
 The current system is mostly request-scoped:
 
 * parse jobs are assembled in memory
-* diagram generation is fully request-scoped
 * generated artifacts are written directly to the filesystem
 
 `InMemoryParsingJobRepository` is a seam, not long-term persistence. It exists so the application layer keeps a stable dependency even before a real repository is needed.
@@ -178,8 +159,7 @@ The workload is cohesive, the domain is still forming, and the team benefits mor
 
 The current architecture leaves room for:
 
-* richer Swift semantic passes on top of the structural model
-* additional renderers that consume `ControlFlowDiagram`
+* richer SQLite semantic passes on top of the structural model
 * alternate delivery channels such as services, plugins, or IDE integrations
 * persistent job storage or cached parse artifacts
 * richer observability built on top of existing domain events

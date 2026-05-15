@@ -1,0 +1,1 @@
+"""Generated SQLite ANTLR parser."""

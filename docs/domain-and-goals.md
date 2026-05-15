@@ -2,19 +2,17 @@
 
 ## Problem Statement
 
-Teams need a reliable way to inspect Swift code outside the Swift compiler for two related jobs:
+Teams need a reliable way to inspect SQLite code outside the SQLite compiler for two related jobs:
 
 * produce a stable, machine-consumable structural report that other tools can automate against
 * produce a human-readable control-flow view that helps engineers inspect branching logic quickly
 
-Swifta exists to turn raw Swift source into those two outputs without coupling the core model to CLI details, filesystem traversal, or ANTLR-specific concerns.
+SQLitea exists to turn raw SQLite source into those two outputs without coupling the core model to CLI details, filesystem traversal, or ANTLR-specific concerns.
 
 ## Business Goals
 
-1. Parse Swift code in a repeatable and automatable way.
+1. Parse SQLite code in a repeatable and automatable way.
 2. Expose a stable structural model that downstream tools can trust even as delivery channels evolve.
-3. Extract structured control flow from function bodies so higher-level visualizations can be built on top of it.
-4. Generate Nassi-Shneiderman HTML diagrams that are useful for inspection, onboarding, and documentation.
 5. Keep grammar limitations, schema versioning, and runtime failures explicit instead of hiding uncertainty.
 6. Preserve a monolith shape that is easy to understand, test, and extend before any service split is justified.
 
@@ -24,37 +22,31 @@ Swifta exists to turn raw Swift source into those two outputs without coupling t
 
 The system currently supports:
 
-* parsing one `.swift` file
+* parsing one `.sql` file
 * parsing a directory recursively
 * extracting imports, type declarations, functions, variables, and extensions
 * returning syntax diagnostics as part of the contract
 * exposing grammar and report versions in the output
 
-### Structured Control Flow and Diagrams
 
 The system currently supports:
 
 * extracting structured steps for functions and methods
 * representing `if/else`, `guard`, `while`, `for-in`, `repeat-while`, `switch`, `do/catch`, and `defer`
 * expanding common trailing closures into inline control-flow steps
-* rendering one HTML Nassi-Shneiderman diagram per source file
 * rendering directory bundles with an index page
 
 ## Stakeholders
 
 * business or product owners who need source intelligence that can evolve into future analysis products
 * parser engineers who maintain grammar integration and source-model correctness
-* tool integrators who consume parse reports or generated diagrams
-* engineers and reviewers who use diagrams to understand unfamiliar control flow
 * CI and operations maintainers who need deterministic, automatable CLI behavior
 
 ## In Scope
 
-* lexical and syntactic parsing of Swift source files
+* lexical and syntactic parsing of SQLite source files
 * extraction of a stable structural model
-* extraction of structured control flow from function bodies
 * project-level orchestration across many files
-* HTML diagram generation and bundle indexing
 * diagnostics, versioning, and operational metadata
 * explicit architectural seams for future extensions
 
@@ -63,7 +55,7 @@ The system currently supports:
 * full semantic analysis
 * type inference or name resolution
 * build graph resolution and module compilation context
-* mutation of source code or code generation back into Swift
+* mutation of source code or code generation back into SQLite
 * distributed deployment concerns
 * long-lived persistence beyond process-local execution
 
@@ -83,7 +75,7 @@ Its invariants are:
 
 ### Source Asset
 
-`SourceUnit` represents one Swift file with:
+`SourceUnit` represents one SQLite file with:
 
 * a stable `SourceUnitId`
 * a source `location`
@@ -109,13 +101,8 @@ The parse-report side of the domain uses:
 
 That distinction matters because syntax diagnostics are a valid parser result, while technical failures are execution failures of the parsing pipeline itself.
 
-### Control Flow Model
 
-The diagram side of the domain is centered around immutable control-flow records:
 
-* `ControlFlowDiagram`: one diagram per source file
-* `FunctionControlFlow`: one function or method inside that file
-* `ControlFlowStep`: base type for structured steps
 
 Concrete step variants currently include:
 
@@ -129,7 +116,6 @@ Concrete step variants currently include:
 * `DoCatchFlowStep`
 * `DeferFlowStep`
 
-This model is intentionally renderer-agnostic. The HTML Nassi renderer is only one consumer of it.
 
 ### Domain Events
 
@@ -146,7 +132,6 @@ Current reactions are intentionally small:
 * application-level status reporting
 * keeping seams open for future metrics, tracing, persistence, or notifications
 
-The diagram workflow currently does not emit a separate domain-event stream; it stays synchronous and request-scoped.
 
 ## Bounded Contexts
 
@@ -162,13 +147,9 @@ Responsible for turning source text into parser output, diagnostics, and structu
 
 Responsible for `ParsingJob` lifecycle, outcome aggregation, and event publication.
 
-### Control Flow Extraction
 
-Responsible for converting function bodies into the stable `ControlFlowDiagram` model.
 
-### Diagram Rendering
 
-Responsible for converting control-flow models into human-readable artifacts such as HTML Nassi diagrams.
 
 ### Delivery
 
@@ -179,4 +160,3 @@ Responsible for CLI contracts, file writing, output paths, exit codes, and futur
 The domain intentionally prefers explicit, immutable records over framework-driven models because the main product value is contract stability. The project can afford a modest amount of duplicated orchestration if it keeps the two core output types clear:
 
 * parse reports for machines
-* Nassi diagrams for humans
