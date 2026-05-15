@@ -39,11 +39,19 @@ Sqlita analyzes the parsed AST to identify common structural, performance, and i
 | **EAVPattern** | `WARNING` | A table contains an entity ID along with `key` and `value` columns (Entity-Attribute-Value anti-pattern). |
 | **MultiValueColumn** | `WARNING` | A column name implies multiple values are stored in a single string (e.g. `tags`, `csv`, `list`). |
 | **GodTable** | `WARNING` | A table has more than 15 columns, potentially violating the Single Responsibility Principle. |
-| **AutoIncrement** | `WARNING` | Using `AUTOINCREMENT` instead of `INTEGER PRIMARY KEY`. It is slower and uses an extra internal table, and is rarely strictly needed. |
+| **AutoIncrement** | `WARNING` | Using `AUTOINCREMENT` instead of `INTEGER PRIMARY KEY`. It is slower and uses an extra internal table. |
 | **SelectStar** | `WARNING` | Using `SELECT *` fetches unnecessary data and makes the query fragile to schema changes. |
 | **ImplicitInsert** | `WARNING` | Using `INSERT INTO table VALUES (...)` without an explicit column list. Breaks when new columns are added. |
-| **NotNullCoverage** | `WARNING` | A column typically requiring a value (e.g. `id`, `email`, `status`, `created_at`) lacks a `NOT NULL` constraint. |
+| **NotNullCoverage** | `WARNING` | A column typically requiring a value (e.g. `id`, `email`, `status`) lacks a `NOT NULL` constraint. |
 | **DateAsText** | `WARNING` | A date or time column is declared as `TEXT` but lacks a `CHECK` constraint to enforce formatting. |
+| **MissingPrimaryKey** | `ERROR` | A table has no `PRIMARY KEY` defined. |
+| **NonStrictMode** | `WARNING` | Table does not use `STRICT` mode (SQLite 3.37+). `STRICT` enforces strict data typing. |
+| **CaseSensitiveLookup** | `WARNING` | Columns like `email` or `username` likely need `COLLATE NOCASE` for correct lookups. |
+| **PlaintextSecrets** | `WARNING` | Column names like `password` or `secret` suggest sensitive data stored in plaintext. |
+| **SuboptimalSynchronous** | `WARNING` | When using WAL mode, `PRAGMA synchronous = NORMAL` is recommended for better performance. |
+| **GodTable** | `WARNING` | A table has more than 15 columns (configurable), violating Single Responsibility. |
+| **EAVPattern** | `WARNING` | Table contains `entity_id` + `key` + `value` (Entity-Attribute-Value anti-pattern). |
+| **MultiValueColumn** | `WARNING` | A column name implies multiple values stored in a string (e.g. `tags`, `csv`). |
 
 ## Architecture
 

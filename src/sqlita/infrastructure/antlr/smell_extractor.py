@@ -23,9 +23,8 @@ class AntlrSqliteSmellExtractor(SmellExtractor):
         visitor.visit(parse_result.tree)
         visitor.post_process()
 
-        # Global checks (like missing WAL and FK)
-        content_upper = source_unit.content.upper()
-        if "PRAGMA FOREIGN_KEYS" not in content_upper:
+        # Global integrity checks
+        if not visitor.global_settings.get("FOREIGN_KEYS"):
             visitor.smells.append(
                 DatabaseSmell(
                     rule_name="PhantomForeignKey",
@@ -36,11 +35,21 @@ class AntlrSqliteSmellExtractor(SmellExtractor):
                 )
             )
 
-        if not re.search(r"PRAGMA\s+JOURNAL_MODE\s*=\s*WAL", content_upper):
+        if not visitor.global_settings.get("WAL"):
             visitor.smells.append(
                 DatabaseSmell(
                     rule_name="MissingWAL",
                     message="PRAGMA journal_mode = WAL is missing. SQLite will use slower rollback journal.",
+                    severity=SmellSeverity.WARNING,
+                    line=1,
+                    column=0,
+                )
+            )
+        elif not visitor.global_settings.get("SYNCHRONOUS_NORMAL"):
+            visitor.smells.append(
+                DatabaseSmell(
+                    rule_name="SuboptimalSynchronous",
+                    message="PRAGMA synchronous = NORMAL is recommended when using WAL mode for better performance.",
                     severity=SmellSeverity.WARNING,
                     line=1,
                     column=0,
@@ -61,22 +70,31 @@ def _build_smell_visitor(visitor_base: type, config: dict[str, Any]) -> type:
         def __init__(self) -> None:
             super().__init__()
             self.smells: list[DatabaseSmell] = []
+            self.global_settings: dict[str, bool] = {
+                "FOREIGN_KEYS": False,
+                "WAL": False,
+                "SYNCHRONOUS_NORMAL": False,
+            }
 
-            # For EAV and God Table per-table tracking
+            # Per-table state
             self._current_table_name: str | None = None
             self._current_table_columns: list[str] = []
             self._current_table_col_types: dict[str, str] = {}
-            self._current_table_line: int = 0
-            self._current_table_column_idx: int = 0
 
-            # State for Missing Index on FK
-            # table_name -> set of foreign key column names
+            # Missing Index on FK state
             self.foreign_keys: dict[str, set[str]] = {}
-            # table_name -> set of indexed column names
             self.indexed_columns: dict[str, set[str]] = {}
-
-            # Map (table, column) -> (line, column) for reporting missing index
             self.fk_locations: dict[tuple[str, str], tuple[int, int]] = {}
+
+        def visitPragma_stmt(self, ctx):
+            text = ctx.getText().upper().replace(" ", "")
+            if "FOREIGN_KEYS=ON" in text:
+                self.global_settings["FOREIGN_KEYS"] = True
+            if "JOURNAL_MODE=WAL" in text:
+                self.global_settings["WAL"] = True
+            if "SYNCHRONOUS=NORMAL" in text:
+                self.global_settings["SYNCHRONOUS_NORMAL"] = True
+            return self.visitChildren(ctx)
 
         def visitSelect_stmt(self, ctx):
             text = ctx.getText().upper()
@@ -119,10 +137,10 @@ def _build_smell_visitor(visitor_base: type, config: dict[str, Any]) -> type:
                     self._current_table_name = table_name_ctx.getText().upper()
                     self.foreign_keys[self._current_table_name] = set()
 
-            self._current_table_line = ctx.start.line
-            self._current_table_column_idx = ctx.start.column
-
             res = self.visitChildren(ctx)
+
+            text_upper = ctx.getText().upper()
+            normalized_text = re.sub(r"[\s;]", "", text_upper)
 
             if len(self._current_table_columns) > god_table_threshold:
                 self.smells.append(
@@ -135,7 +153,31 @@ def _build_smell_visitor(visitor_base: type, config: dict[str, Any]) -> type:
                     )
                 )
 
-            # EAV Check: Only if key, value, AND an entity ID are present
+            # Missing Primary Key
+            if "PRIMARYKEY" not in normalized_text:
+                self.smells.append(
+                    DatabaseSmell(
+                        rule_name="MissingPrimaryKey",
+                        message=f"Table '{self._current_table_name or 'unnamed'}' has no PRIMARY KEY defined.",
+                        severity=SmellSeverity.ERROR,
+                        line=ctx.start.line,
+                        column=ctx.start.column,
+                    )
+                )
+
+            # Non-Strict Mode
+            if "STRICT" not in normalized_text:
+                self.smells.append(
+                    DatabaseSmell(
+                        rule_name="NonStrictMode",
+                        message="Table does not use STRICT mode. Production tables benefit from enforced type checking.",
+                        severity=SmellSeverity.WARNING,
+                        line=ctx.start.line,
+                        column=ctx.start.column,
+                    )
+                )
+
+            # EAV Check
             cols_lower = [c.lower() for c in self._current_table_columns]
             has_entity_id = any(c.endswith("_id") or c == "id" for c in cols_lower)
             if has_entity_id and "key" in cols_lower and "value" in cols_lower:
@@ -149,9 +191,8 @@ def _build_smell_visitor(visitor_base: type, config: dict[str, Any]) -> type:
                     )
                 )
 
-            # Phantom FK Check: Only trigger if missing FK and type is INT/INTEGER or missing
-            text = ctx.getText().upper()
-            has_fk = "FOREIGNKEY" in text or "REFERENCES" in text
+            # Phantom FK Check
+            has_fk = "FOREIGNKEY" in normalized_text or "REFERENCES" in normalized_text
             if not has_fk:
                 for col in self._current_table_columns:
                     col_lower = col.lower()
@@ -191,6 +232,7 @@ def _build_smell_visitor(visitor_base: type, config: dict[str, Any]) -> type:
             if col_name:
                 name_lower = col_name.lower()
                 text_upper = ctx.getText().upper()
+                normalized_col = re.sub(r"[\s;]", "", text_upper)
 
                 if "tags" in name_lower or "list" in name_lower or "csv" in name_lower:
                     self.smells.append(
@@ -214,11 +256,36 @@ def _build_smell_visitor(visitor_base: type, config: dict[str, Any]) -> type:
                         )
                     )
 
-                if "AUTOINCREMENT" in text_upper:
+                if "AUTOINCREMENT" in normalized_col:
                     self.smells.append(
                         DatabaseSmell(
                             rule_name="AutoIncrement",
                             message="AUTOINCREMENT is slower and uses extra space. Use INTEGER PRIMARY KEY instead.",
+                            severity=SmellSeverity.WARNING,
+                            line=ctx.start.line,
+                            column=ctx.start.column,
+                        )
+                    )
+
+                # CaseSensitiveLookup
+                if name_lower in {"email", "login", "username", "user_name"}:
+                    if "COLLATENOCASE" not in normalized_col:
+                        self.smells.append(
+                            DatabaseSmell(
+                                rule_name="CaseSensitiveLookup",
+                                message=f"Column '{col_name}' likely requires case-insensitive lookups. Consider COLLATE NOCASE.",
+                                severity=SmellSeverity.WARNING,
+                                line=ctx.start.line,
+                                column=ctx.start.column,
+                            )
+                        )
+
+                # PlaintextSecrets
+                if any(s in name_lower for s in {"password", "secret", "token", "api_key"}):
+                    self.smells.append(
+                        DatabaseSmell(
+                            rule_name="PlaintextSecrets",
+                            message=f"Column '{col_name}' might store sensitive data in plaintext.",
                             severity=SmellSeverity.WARNING,
                             line=ctx.start.line,
                             column=ctx.start.column,
@@ -232,7 +299,7 @@ def _build_smell_visitor(visitor_base: type, config: dict[str, Any]) -> type:
                     or name_lower.endswith("_id")
                     or name_lower == "id"
                 ):
-                    if "NOTNULL" not in text_upper and "PRIMARYKEY" not in text_upper:
+                    if "NOTNULL" not in normalized_col and "PRIMARYKEY" not in normalized_col:
                         self.smells.append(
                             DatabaseSmell(
                                 rule_name="NotNullCoverage",
@@ -248,7 +315,7 @@ def _build_smell_visitor(visitor_base: type, config: dict[str, Any]) -> type:
                     "date" in name_lower or "time" in name_lower or name_lower.endswith("_at")
                 )
                 if is_date_col and "TEXT" in col_type.upper():
-                    if "CHECK" not in text_upper:
+                    if "CHECK" not in normalized_col:
                         self.smells.append(
                             DatabaseSmell(
                                 rule_name="DateAsText",
@@ -259,8 +326,8 @@ def _build_smell_visitor(visitor_base: type, config: dict[str, Any]) -> type:
                             )
                         )
 
-                # Track foreign keys for Missing Index (inline column constraint)
-                if "REFERENCES" in text_upper and self._current_table_name:
+                # Track foreign keys for Missing Index
+                if "REFERENCES" in normalized_col and self._current_table_name:
                     self.foreign_keys[self._current_table_name].add(col_name.upper())
                     self.fk_locations[(self._current_table_name, col_name.upper())] = (
                         ctx.start.line,
@@ -271,8 +338,9 @@ def _build_smell_visitor(visitor_base: type, config: dict[str, Any]) -> type:
 
         def visitTable_constraint(self, ctx):
             text_upper = ctx.getText().upper()
-            if "FOREIGNKEY(" in text_upper and self._current_table_name:
-                match = re.search(r"FOREIGNKEY\(([^)]+)\)", text_upper)
+            normalized_cons = re.sub(r"[\s;]", "", text_upper)
+            if "FOREIGNKEY(" in normalized_cons and self._current_table_name:
+                match = re.search(r"FOREIGNKEY\(([^)]+)\)", normalized_cons)
                 if match:
                     cols = match.group(1).split(",")
                     for c in cols:
