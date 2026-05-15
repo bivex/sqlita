@@ -87,13 +87,21 @@ def _build_smell_visitor(visitor_base: type, config: dict[str, Any]) -> type:
             self.fk_locations: dict[tuple[str, str], tuple[int, int]] = {}
 
         def visitPragma_stmt(self, ctx):
-            text = ctx.getText().upper().replace(" ", "")
-            if "FOREIGN_KEYS=ON" in text:
+            text = ctx.getText().upper().replace(" ", "").replace(";", "")
+            # SQLite values for ON: ON, 1, TRUE, YES
+            # SQLite values for NORMAL: NORMAL, 1
+            if any(
+                v in text
+                for v in ["FOREIGN_KEYS=ON", "FOREIGN_KEYS=1", "FOREIGN_KEYS=TRUE", "FOREIGN_KEYS=YES"]
+            ):
                 self.global_settings["FOREIGN_KEYS"] = True
+
             if "JOURNAL_MODE=WAL" in text:
                 self.global_settings["WAL"] = True
-            if "SYNCHRONOUS=NORMAL" in text:
+
+            if any(v in text for v in ["SYNCHRONOUS=NORMAL", "SYNCHRONOUS=1"]):
                 self.global_settings["SYNCHRONOUS_NORMAL"] = True
+
             return self.visitChildren(ctx)
 
         def visitSelect_stmt(self, ctx):
