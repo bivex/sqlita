@@ -124,4 +124,4 @@ The current ANTLR grammar is sourced from `antlr/grammars-v4/sql/sqlite`. Its ow
 - [ ] `NOT NULL` coverage smell — columns without constraints on non-nullable data
 - [ ] Date-as-TEXT smell — unguarded text columns for timestamps
 - [ ] Configurable thresholds via `.sqlita.toml`
-- [ ] `--format` flag: `json` | `text` | `github` (for CI annotations)
+- [x] `--format` flag: `json` | `text` | `github` | `markdown` (for AI and CLI reading)

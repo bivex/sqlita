@@ -108,6 +108,34 @@ def _print_smells_report(report: SmellReportDTO | SmellReportBundleDTO, format_t
                 print(
                     f"::{smell.severity} file={report.source_location},line={smell.line},col={smell.column}::{smell.rule_name}: {smell.message}"
                 )
+    elif format_type == "markdown":
+        print("## Database Smells Report\n")
+        if isinstance(report, SmellReportBundleDTO):
+            for r in report.reports:
+                if not r.smells:
+                    continue
+                print(f"### File: `{r.source_location}`\n")
+                print("| Line | Column | Severity | Rule | Message |")
+                print("| :--- | :--- | :---: | :--- | :--- |")
+                for smell in r.smells:
+                    icon = "🔴" if smell.severity == "error" else "🟡"
+                    print(
+                        f"| {smell.line} | {smell.column} | {icon} {smell.severity.upper()} | **{smell.rule_name}** | {smell.message} |"
+                    )
+                print()
+        else:
+            print(f"### File: `{report.source_location}`\n")
+            if not report.smells:
+                print("*No smells detected.*\n")
+            else:
+                print("| Line | Column | Severity | Rule | Message |")
+                print("| :--- | :--- | :---: | :--- | :--- |")
+                for smell in report.smells:
+                    icon = "🔴" if smell.severity == "error" else "🟡"
+                    print(
+                        f"| {smell.line} | {smell.column} | {icon} {smell.severity.upper()} | **{smell.rule_name}** | {smell.message} |"
+                    )
+            print()
 
 
 def _build_argument_parser() -> argparse.ArgumentParser:
@@ -126,7 +154,7 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     )
     smells_file.add_argument("path", help="Path to a .sql file.")
     smells_file.add_argument(
-        "--format", choices=["json", "text", "github"], default="json", help="Output format."
+        "--format", choices=["json", "text", "github", "markdown"], default="json", help="Output format."
     )
 
     smells_dir = subparsers.add_parser(
@@ -134,7 +162,7 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     )
     smells_dir.add_argument("path", help="Path to a directory.")
     smells_dir.add_argument(
-        "--format", choices=["json", "text", "github"], default="json", help="Output format."
+        "--format", choices=["json", "text", "github", "markdown"], default="json", help="Output format."
     )
 
     return parser
