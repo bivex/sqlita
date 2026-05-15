@@ -80,14 +80,46 @@ uv run sqlita parse-file path/to/File.sql
 uv run sqlita parse-dir path/to/project
 ```
 
+5. Detect smells in a file:
+
+```bash
+uv run sqlita smells-file path/to/File.sql
+```
+
+6. Detect smells in a directory:
+
+```bash
+uv run sqlita smells-dir path/to/project
+```
+
+## Example Output
+
+```bash
+uv run sqlita smells-file schema.sql
+```
+
+```json
+{
+  "source_location": "/path/to/schema.sql",
+  "smells": [
+    {
+      "rule_name": "PhantomForeignKey",
+      "message": "Column 'user_id' looks like a foreign key but lacks a constraint.",
+      "severity": "error",
+      "line": 12,
+      "column": 3
+    }
+  ]
+}
+```
+
 ## Constraints and honesty
 
 The current ANTLR grammar is sourced from `antlr/grammars-v4/sql/sqlite`. Its own README states that it targets SQLite 3 syntax. Sqlita makes limitations explicit in requirements, ADRs, and runtime metadata so downstream consumers know what contract they are integrating with.
 
 ## Next Steps
 
-Useful future extensions:
-
-* semantic passes on top of the structural model
-* integration adapters for external analysis tools
-* incremental parsing and caching
+- [ ] `NOT NULL` coverage smell — columns without constraints on non-nullable data
+- [ ] Date-as-TEXT smell — unguarded text columns for timestamps
+- [ ] Configurable thresholds via `.sqlita.toml`
+- [ ] `--format` flag: `json` | `text` | `github` (for CI annotations)
