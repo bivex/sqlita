@@ -19,8 +19,29 @@ Today the system supports:
   * extracting a lightweight structural model: tables, columns, indexes, views, triggers, and statements
   * reporting syntax diagnostics as part of the contract
 
+* **Database Smell Detection**
+  * identifying schema and performance anti-patterns (e.g., missing indexes, EAV, phantom foreign keys)
+  * outputting detailed JSON reports with line and column references
+
 * **Architecture**
   * keeping parser infrastructure behind ports so the application layer stays independent from ANTLR, filesystem, and CLI details
+
+## Database Smells Detected
+
+Sqlita analyzes the parsed AST to identify common structural, performance, and integrity anti-patterns:
+
+| Rule Name | Severity | Description |
+| :--- | :---: | :--- |
+| **PhantomForeignKey** | `ERROR` | Missing `PRAGMA foreign_keys = ON` globally, or a column looks like a foreign key (e.g. `user_id` INTEGER) but lacks a constraint. |
+| **MissingIndexOnForeignKey**| `ERROR` | A declared `FOREIGN KEY` does not have an accompanying `CREATE INDEX`. In SQLite, this causes full table scans during joins and cascading deletes. |
+| **PolymorphicAssociation** | `ERROR` | A table has `ref_id` and `ref_type` columns. Foreign keys cannot enforce referential integrity across multiple target tables. |
+| **MissingWAL** | `WARNING` | Missing `PRAGMA journal_mode = WAL`. WAL significantly improves concurrency and performance in most applications. |
+| **EAVPattern** | `WARNING` | A table contains an entity ID along with `key` and `value` columns (Entity-Attribute-Value anti-pattern). |
+| **MultiValueColumn** | `WARNING` | A column name implies multiple values are stored in a single string (e.g. `tags`, `csv`, `list`). |
+| **GodTable** | `WARNING` | A table has more than 15 columns, potentially violating the Single Responsibility Principle. |
+| **AutoIncrement** | `WARNING` | Using `AUTOINCREMENT` instead of `INTEGER PRIMARY KEY`. It is slower and uses an extra internal table, and is rarely strictly needed. |
+| **SelectStar** | `WARNING` | Using `SELECT *` fetches unnecessary data and makes the query fragile to schema changes. |
+| **ImplicitInsert** | `WARNING` | Using `INSERT INTO table VALUES (...)` without an explicit column list. Breaks when new columns are added. |
 
 ## Architecture
 

@@ -8,6 +8,7 @@ from typing import Sequence
 
 from sqlita.domain.events import DomainEvent
 from sqlita.domain.model import GrammarVersion, ParseOutcome, ParsingJob, SourceUnit
+from sqlita.domain.smells import SmellReport
 
 
 class SourceRepository(ABC):
@@ -46,4 +47,10 @@ class DomainEventPublisher(ABC):
 class Clock(ABC):
     @abstractmethod
     def now(self) -> datetime:
+        raise NotImplementedError
+
+
+class SmellExtractor(ABC):
+    @abstractmethod
+    def extract(self, source_unit: SourceUnit) -> SmellReport:
         raise NotImplementedError
