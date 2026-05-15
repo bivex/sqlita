@@ -42,6 +42,8 @@ Sqlita analyzes the parsed AST to identify common structural, performance, and i
 | **AutoIncrement** | `WARNING` | Using `AUTOINCREMENT` instead of `INTEGER PRIMARY KEY`. It is slower and uses an extra internal table, and is rarely strictly needed. |
 | **SelectStar** | `WARNING` | Using `SELECT *` fetches unnecessary data and makes the query fragile to schema changes. |
 | **ImplicitInsert** | `WARNING` | Using `INSERT INTO table VALUES (...)` without an explicit column list. Breaks when new columns are added. |
+| **NotNullCoverage** | `WARNING` | A column typically requiring a value (e.g. `id`, `email`, `status`, `created_at`) lacks a `NOT NULL` constraint. |
+| **DateAsText** | `WARNING` | A date or time column is declared as `TEXT` but lacks a `CHECK` constraint to enforce formatting. |
 
 ## Architecture
 

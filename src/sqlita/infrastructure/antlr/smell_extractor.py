@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from sqlita.domain.model import SourceUnit
 from sqlita.domain.ports import SmellExtractor
@@ -11,12 +12,13 @@ from sqlita.infrastructure.antlr.runtime import load_generated_types, parse_sour
 
 
 class AntlrSqliteSmellExtractor(SmellExtractor):
-    def __init__(self) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         self._generated = load_generated_types()
+        self._config = config or {}
 
     def extract(self, source_unit: SourceUnit) -> SmellReport:
         parse_result = parse_source_text(source_unit.content, self._generated)
-        visitor_class = _build_smell_visitor(self._generated.visitor_type)
+        visitor_class = _build_smell_visitor(self._generated.visitor_type, self._config)
         visitor = visitor_class()
         visitor.visit(parse_result.tree)
         visitor.post_process()
@@ -51,7 +53,10 @@ class AntlrSqliteSmellExtractor(SmellExtractor):
         )
 
 
-def _build_smell_visitor(visitor_base: type) -> type:
+def _build_smell_visitor(visitor_base: type, config: dict[str, Any]) -> type:
+    god_table_threshold = config.get("god_table_threshold", 15)
+    phantom_fk_suffixes = tuple(config.get("phantom_fk_suffixes", ["_id"]))
+
     class SmellVisitor(visitor_base):
         def __init__(self) -> None:
             super().__init__()
@@ -119,7 +124,7 @@ def _build_smell_visitor(visitor_base: type) -> type:
 
             res = self.visitChildren(ctx)
 
-            if len(self._current_table_columns) > 15:
+            if len(self._current_table_columns) > god_table_threshold:
                 self.smells.append(
                     DatabaseSmell(
                         rule_name="GodTable",
@@ -150,7 +155,7 @@ def _build_smell_visitor(visitor_base: type) -> type:
             if not has_fk:
                 for col in self._current_table_columns:
                     col_lower = col.lower()
-                    if col_lower.endswith("_id"):
+                    if any(col_lower.endswith(s) for s in phantom_fk_suffixes):
                         col_type = self._current_table_col_types.get(col, "").upper()
                         if col_type == "" or "INT" in col_type:
                             self.smells.append(
@@ -219,6 +224,40 @@ def _build_smell_visitor(visitor_base: type) -> type:
                             column=ctx.start.column,
                         )
                     )
+
+                # NotNullCoverage Smell
+                expected_not_null = {"email", "name", "status", "type", "created_at", "updated_at"}
+                if (
+                    name_lower in expected_not_null
+                    or name_lower.endswith("_id")
+                    or name_lower == "id"
+                ):
+                    if "NOTNULL" not in text_upper and "PRIMARYKEY" not in text_upper:
+                        self.smells.append(
+                            DatabaseSmell(
+                                rule_name="NotNullCoverage",
+                                message=f"Column '{col_name}' typically requires a NOT NULL constraint.",
+                                severity=SmellSeverity.WARNING,
+                                line=ctx.start.line,
+                                column=ctx.start.column,
+                            )
+                        )
+
+                # DateAsText Smell
+                is_date_col = (
+                    "date" in name_lower or "time" in name_lower or name_lower.endswith("_at")
+                )
+                if is_date_col and "TEXT" in col_type.upper():
+                    if "CHECK" not in text_upper:
+                        self.smells.append(
+                            DatabaseSmell(
+                                rule_name="DateAsText",
+                                message=f"Column '{col_name}' stores dates as TEXT without a CHECK constraint for format validation.",
+                                severity=SmellSeverity.WARNING,
+                                line=ctx.start.line,
+                                column=ctx.start.column,
+                            )
+                        )
 
                 # Track foreign keys for Missing Index (inline column constraint)
                 if "REFERENCES" in text_upper and self._current_table_name:
